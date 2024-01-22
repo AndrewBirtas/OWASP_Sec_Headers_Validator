@@ -1,7 +1,12 @@
 require 'net/http'
+require 'nokogiri'
 require 'uri'
+require 'open-uri'
 require 'optparse'
 require 'json'
+require 'colorize'
+require 'colorized_string'
+
 
 # Function to fetch the list of headers to check from a URL
 def fetch_headers_to_check(url)
@@ -11,16 +16,59 @@ def fetch_headers_to_check(url)
     if response.is_a?(Net::HTTPSuccess)
       headers_data = JSON.parse(response.body)
   
-      headers_to_check = headers_data['headers'].map { |header| header['name'].downcase }
+      #headers_to_check = headers_data['headers'].map { |header| header['name'].downcase }
+      #return headers_to_check
+
+      headers_to_check = {}
+    
+      headers_data['headers'].each do |header|
+      name = header['name'].downcase
+      value = header['value']
+      headers_to_check[name] = value
+    end
       return headers_to_check
     else
       puts "Error fetching headers data from #{url}"
-      return []
+      return {}
     end
   end
 
+def fetch_headers_deprecated()
+  url = 'https://owasp.org/www-project-secure-headers/#div-headers'
+
+  begin
+    html = URI.open(url)
+    doc = Nokogiri::HTML(html)
+
+    deprecated_section = doc.at('strong:contains("Deprecated")')
+
+    if deprecated_section
+      ul_tag = deprecated_section.xpath('following::ul').first
+
+      if ul_tag
+        deprecated_headers = ul_tag.css('li a').map do |a_tag|
+          header_name = a_tag.text.downcase
+          { name: header_name, deprecated: true }
+        end
+
+        if deprecated_headers.any?
+          return deprecated_headers
+        else
+          puts "#{'No "Deprecated" headers found on the page'.red}"
+        end
+      else
+        puts "#{'No "Deprecated" section found on the page'.red}"
+      end
+    else
+      puts "#{'No "Deprecated" section found on the page'.red}"
+    end
+  rescue StandardError => e
+    puts "Error fetching or parsing the webpage: #{e.message}"
+  end
+end
+
 #Fetch Headers From URL
-def fetch_headers(url, headers={})
+def fetch_headers_from_url(url, headers={})
   uri = URI.parse(url)
   http = Net::HTTP.new(uri.host, uri.port)
   http.use_ssl = (uri.scheme == 'https')
@@ -34,7 +82,9 @@ def fetch_headers(url, headers={})
     response = http.request(request)
     #content = response.body
     res_headers = response.to_hash
-    puts "Headers fetched from #{url}:\n#{res_headers}"
+
+    #DEBUG LINE#
+    #puts "Headers fetched from #{url}:\n#{res_headers}"
     #puts "Body fetched from #{url}:\n#{content}"
     check_headers_presence(res_headers)
   rescue StandardError => e
@@ -72,7 +122,9 @@ def fetch_headers_from_request(file_path)
             response = http.request(request)
             #content = response.body
             res_headers = response.to_hash
-            puts "Headers fetched from #{uri}:\n#{res_headers}"
+
+            #DEBUG LINE#
+            #puts "Headers fetched from #{uri}:\n#{res_headers}"
             #puts "Body fetched from #{uri}:\n#{content}"
             check_headers_presence(res_headers)
         rescue StandardError => e
@@ -90,7 +142,8 @@ def fetch_headers_from_request(file_path)
 def read_burp_request(file_path)
   begin
     content = File.read(file_path)
-    puts "Content read from Burp request file (#{file_path}):\n#{content}"
+    #DEBUG LINE#
+    #puts "Content read from Burp request file (#{file_path}):\n#{content}"
     fetch_headers_from_request(file_path)
   rescue StandardError => e
     puts "Error reading Burp request file (#{file_path}): #{e.message}"
@@ -100,15 +153,59 @@ end
 def check_headers_presence(response_headers)
 
     headers_to_check = fetch_headers_to_check('https://owasp.org/www-project-secure-headers/ci/headers_add.json')
-    headers_to_check.each do |header|
+    headers_deprecated = fetch_headers_deprecated()
+
+    headers_to_check.each do |header, recommended_value|
       header_name = header.downcase
+      
+      response_value = response_headers[header_name]
+
+      if header_name == 'pragma'
+        puts "=====Acknoledgement====="
+        puts "The Pragma Header might be present just for backwards compatability with HTTP1/0"
+      end
+      # Handle the case where the response value is an array
+      response_value = response_value.join(', ') if response_value.is_a?(Array)
+
+      # Strip and lowercase the response value
+      response_value = response_value.to_s.strip.downcase
+      
+      puts "\n\n\n========================================================================\n"
       if response_headers.key?(header_name)
-        puts "Header '#{header}' is present in the response."
+        puts "Header '#{header_name.capitalize.yellow.bold}' #{'is present'.green} in the response."
+        if response_value == recommended_value.downcase
+          puts "Header '#{header_name.capitalize.yellow.bold}' #{'is present and has the recommended value'.green} in the response."
+          #puts "Recommended value is\t #{recommended_value}.\nPresent configuration is\t #{response_value}"
+          printf "%-25s %s\n", "Recommended value is:", recommended_value
+          printf "%-25s %s\n", "Present configuration is:", response_value
+        else
+          puts "Header '#{header_name.capitalize.yellow.bold}' #{'is present but does not have the recommended value'.red} in the response."
+          #puts "Recommended value is\t #{recommended_value}.\nPresent configuration is\t #{response_value}"
+          printf "%-25s %s\n", "Recommended value is:", recommended_value
+          printf "%-25s %s\n", "Present configuration is:", response_value
+        end
       else
-        puts "Header '#{header}' is NOT present in the response."
+        puts "Header '#{header_name.capitalize.yellow.bold}' #{'is NOT present'.red} in the response."
+      end
+    end
+
+    puts "\n\n\n============================Deprecated headers============================\n"
+    headers_deprecated.each do |deprecate_i|
+      header_name = deprecate_i[:name]
+
+      #DEBUG LINE#
+      #puts "#{deprecate_i[:name]}"
+      if response_headers.key?(header_name)
+        puts ColorizedString["HEADER #{header_name.upcase.bold} IS PRESENT."].colorize(:black).bold.on_red.underline
+        #puts "#{'HEADER'} '#{header_name.capitalize.purple.bold}' #{'IS PRESENT AND IS DEPRECATED.'.purple} "
+        puts "========================================================================\n"
+        puts "\nPlease perform further manual checks as well in order to validate the results outputed by this script."
+        puts "Happy hacking!"
+        puts "©2024 Wh1t3Flag"
       end
     end
   end  
+
 
 options = {}
 OptionParser.new do |opts|
@@ -130,7 +227,8 @@ OptionParser.new do |opts|
 end.parse!
 
 if options[:url]
-  fetch_headers(options[:url], options[:headers])
+  fetch_headers_from_url(options[:url], options[:headers])
+  #fetch_headers_deprecated()
 elsif options[:request_file]
   read_burp_request(options[:request_file])
 else
