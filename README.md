@@ -18,9 +18,9 @@ Explain how to get a copy of your project up and running on a local machine.
 ### Prerequisites
 
 List of dependencies that need to be installed:
-  -Ruby 2.7.2
-  -Nokogiri gem
-  -Colorize gem
+  - Ruby 2.7.2
+  - Nokogiri gem
+  - Colorize gem
 
 ### Installation
 
