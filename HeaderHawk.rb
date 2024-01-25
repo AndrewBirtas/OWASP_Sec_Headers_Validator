@@ -8,6 +8,20 @@ require 'colorize'
 require 'colorized_string'
 
 
+def display_banner
+  banner = <<-'BANNER'
+      _    _                _           _    _                _    
+     | |  | |              | |         | |  | |              | |   
+     | |__| | ___  __ _  __| | ___ _ __| |__| | __ ___      _| | __
+     |  __  |/ _ \/ _` |/ _` |/ _ \\'__|  __  |/ _` \ \ /\ / | |/ /
+     | |  | |  __| (_| | (_| |  __| |  | |  | | (_| |\ V  V /|   < 
+     |_|  |_|\___|\__,_|\__,_|\___|_|  |_|  |_|\__,_| \_/\_/ |_|\_\
+                                                                  
+  BANNER
+
+  puts banner
+  end
+
 # Function to fetch the list of headers to check from a URL
 def fetch_headers_to_check(url)
     uri = URI.parse(url)
@@ -210,6 +224,7 @@ def check_headers_presence(response_headers)
 options = {}
 OptionParser.new do |opts|
   opts.banner = "Usage: ruby script.rb [options]"
+  display_banner
 
   opts.on("-u", "--url URL", "Specify URL") do |url|
     options[:url] = url
@@ -224,6 +239,12 @@ OptionParser.new do |opts|
   opts.on("-r", "--request FILE", "Specify Burp request file") do |file_path|
     options[:request_file] = file_path
   end
+
+  opts.on("-h", "--help", "Prints this help") do
+    puts opts
+    exit
+  end
+
 end.parse!
 
 if options[:url]
@@ -232,5 +253,5 @@ if options[:url]
 elsif options[:request_file]
   read_burp_request(options[:request_file])
 else
-  puts "Please specify either a URL (-u) or a Burp request file (-r)."
+  puts "\nPlease refer to (-h) or --help for instructions."
 end
